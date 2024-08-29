@@ -197,7 +197,7 @@ class AehW4a1:
                         )
                     else:
                         nets.append(
-                            ipaddress.IPv4Network(f"{ip.ip}/24", strict=False)
+                            ipaddress.IPv4Network(f"{ip.ip}/28", strict=False)
                         )
         if not nets:        
             raise NoNetworksError("No networks available")
