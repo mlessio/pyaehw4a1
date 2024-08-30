@@ -187,9 +187,17 @@ class AehW4a1:
 
         nets = []
         adapters = ifaddr.get_adapters()
-
-        nets.append(
-                            ipaddress.IPv4Network("192.168.1.0/28", strict=False)
+        for adapter in adapters:
+            for ip in adapter.ips:
+                if ip.is_IPv4 and ip.ip != "127.0.0.1":
+                    if self._full:
+                        nets.append(
+                            ipaddress.IPv4Network(f"{ip.ip}/{ip.network_prefix}",
+                            strict=False)
+                        )
+                    else:
+                        nets.append(
+                            ipaddress.IPv4Network(f"{ip.ip}/24", strict=False)
                         )
         if not nets:        
             raise NoNetworksError("No networks available")
@@ -197,14 +205,20 @@ class AehW4a1:
         acs = []
         out_queue = asyncio.Queue()
         for net in nets:
-            task_queue = asyncio.Queue(maxsize=MAX_NUMBER_WORKERS)
+            task_queue = asyncio.Queue()
             scan_completed = asyncio.Event()
             scan_completed.clear()
-            tasks = [asyncio.create_task(self._task_master(net, task_queue, scan_completed))]
+            
+            for ip in net:
+                print(str(ip))
+                await task_queue.put(str(ip))
+
+            tasks = []
+
             for _ in range(MAX_NUMBER_WORKERS):
                 tasks.append(asyncio.create_task(self._task_worker(task_queue, out_queue)))         
-            await scan_completed.wait()
             await task_queue.join()
+            print(task_queue.qsize())
             for task in tasks:
                 task.cancel()
             await asyncio.gather(*tasks, return_exceptions=True)
@@ -215,17 +229,13 @@ class AehW4a1:
             acs.append(out_queue.get_nowait())
         return acs
 
-    async def _task_master(self, net, task_queue: asyncio.Queue, scan_completed: asyncio.Event):
-        for ip in net:
-            await task_queue.put(str(ip))
-        scan_completed.set()
 
     async def _task_worker(self, task_queue, out_queue):
         while True:
             ip = (await task_queue.get())
             try:
                 reader, writer = await asyncio.wait_for(
-                    asyncio.open_connection(ip, 8888), timeout = 2)
+                    asyncio.open_connection(ip, 8888), timeout = 1)
             except:
                 pass
             else:
@@ -237,4 +247,6 @@ class AehW4a1:
                 if bytes("+XMV:", 'utf-8') in data:
                     out_queue.put_nowait(ip)
             finally:
+                print("done")
                 task_queue.task_done()
+                print(task_queue.qsize())
